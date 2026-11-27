@@ -1,5 +1,5 @@
 import * as React from "react";
-import { Keyboard, Platform, type LayoutChangeEvent } from "react-native";
+import { Dimensions, Keyboard, Platform, type LayoutChangeEvent } from "react-native";
 
 /**
  * Melacak tinggi soft keyboard di iOS/Android secara real-time (selalu 0 di Web).
@@ -13,7 +13,13 @@ export function useKeyboardHeight(): number {
     const hideEvent = Platform.OS === "ios" ? "keyboardWillHide" : "keyboardDidHide";
 
     const showSub = Keyboard.addListener(showEvent, (e) => {
-      setHeight(Math.max(0, Math.round(e.endCoordinates?.height ?? 0)));
+      const reported = Math.round(e.endCoordinates?.height ?? 0);
+      const screenY = Math.round(e.endCoordinates?.screenY ?? 0);
+      const screenH = Math.round(Dimensions.get("screen").height);
+      // Di Android edge-to-edge dengan 3-button nav bar, endCoordinates.height kadang tidak
+      // mencakup tinggi nav bar bawah; (screenH - screenY) mengukur tepat dari atas keyboard ke dasar layar.
+      const fromScreenY = screenY > 0 && screenY < screenH ? screenH - screenY : 0;
+      setHeight(Math.max(0, reported, fromScreenY));
     });
     const hideSub = Keyboard.addListener(hideEvent, () => {
       setHeight(0);

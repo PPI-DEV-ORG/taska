@@ -866,11 +866,13 @@ export function AiAssistantScreen({
           </View>
         ) : null}
 
-        {messages.length > 0 && contextualPrompts.length ? (
+        {messages.length > 0 && contextualPrompts.length && !(isCompactNative && isKeyboardOpen) ? (
           <ScrollView
             horizontal
             showsHorizontalScrollIndicator={true}
-            contentContainerClassName="gap-2 pb-2 pt-0.5"
+            style={{ flexGrow: 0, flexShrink: 0 }}
+            contentContainerClassName="gap-2 pb-2 pt-0.5 items-center"
+            keyboardShouldPersistTaps="handled"
           >
             {contextualPrompts.map((p) => (
               <Pressable
