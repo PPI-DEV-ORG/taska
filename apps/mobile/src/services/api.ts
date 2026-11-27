@@ -716,9 +716,38 @@ export type AiLlmSettings = {
   model: string;
   fallbackModels: string[];
   timeoutMs: number;
+  monthlyTokenQuota?: number | null;
+  maxTurnsPerSession?: number;
   hasApiKey: boolean;
   source: "DB" | "ENV";
   providerLabel: string;
+};
+
+export type AiSessionStats = {
+  activeTurns: number;
+  maxTurns: number;
+  sessionTokens: number;
+  contextTokensEst: number;
+  contextSoftCap: number;
+  compacted: boolean;
+  compactedAt: string | null;
+  wasAutoCompacted?: boolean;
+};
+
+export type AiUsageBucket = {
+  requests: number;
+  promptTokens: number;
+  completionTokens: number;
+  totalTokens: number;
+};
+
+export type AiUsageSummary = {
+  today: AiUsageBucket;
+  month: AiUsageBucket;
+  globalMonth: AiUsageBucket | null;
+  monthlyTokenQuota: number | null;
+  quotaUsagePct: number | null;
+  maxTurnsPerSession: number;
 };
 
 export type AiTestConnectionResult = {
@@ -743,6 +772,8 @@ export type AiChatMessageItem = {
   content: string;
   toolsUsed: string[];
   attachments?: AiChatAttachment[];
+  totalTokens?: number | null;
+  modelUsed?: string | null;
   createdAt: string;
 };
 
@@ -753,6 +784,7 @@ export type AiChatSessionDetail = {
   updatedAt: string;
   messages: AiChatMessageItem[];
   pendingActions?: AiPendingActionItem[];
+  sessionStats?: AiSessionStats;
 };
 
 export type AiChatReply = {
@@ -762,10 +794,24 @@ export type AiChatReply = {
   assistantMessage: AiChatMessageItem;
   toolsUsed: string[];
   pendingActions?: AiPendingActionItem[];
+  sessionStats?: AiSessionStats;
 };
 
 export async function fetchAiCapabilities() {
   return api<AiCapabilities>("GET", "/ai-agent/capabilities");
+}
+
+export async function fetchAiUsage() {
+  return api<AiUsageSummary>("GET", "/ai-agent/usage");
+}
+
+export async function compactAiSession(sessionId: number) {
+  return api<{
+    compacted: boolean;
+    compactedMessagesCount?: number;
+    summary: string | null;
+    sessionStats: AiSessionStats;
+  }>("POST", `/ai-agent/sessions/${sessionId}/compact`);
 }
 
 export async function fetchAiSettings() {
@@ -779,6 +825,8 @@ export async function updateAiSettings(data: {
   timeoutMs?: number;
   apiKey?: string;
   clearApiKey?: boolean;
+  monthlyTokenQuota?: number;
+  maxTurnsPerSession?: number;
 }) {
   return api<AiLlmSettings>("PUT", "/ai-agent/settings", data);
 }

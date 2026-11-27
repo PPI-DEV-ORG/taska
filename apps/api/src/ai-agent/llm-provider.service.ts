@@ -32,10 +32,51 @@ export interface LlmToolDefinition {
   };
 }
 
+export interface LlmTokenUsage {
+  promptTokens: number;
+  completionTokens: number;
+  totalTokens: number;
+}
+
 export interface LlmCompletionResult {
   content: string | null;
   toolCalls: LlmToolCall[];
   finishReason: string | null;
+  usage?: LlmTokenUsage;
+  modelUsed?: string;
+}
+
+function estimateMessagesTokens(messages: LlmChatMessage[]): number {
+  let chars = 0;
+  for (const m of messages) {
+    chars += (m.content?.length ?? 0) + 12;
+    if (m.tool_calls?.length) {
+      chars += JSON.stringify(m.tool_calls).length;
+    }
+  }
+  return Math.max(1, Math.ceil(chars / 4));
+}
+
+function normalizeUsage(
+  raw: { prompt_tokens?: number; completion_tokens?: number; total_tokens?: number } | undefined,
+  messages: LlmChatMessage[],
+  completionText: string | null,
+  toolCalls: LlmToolCall[],
+): LlmTokenUsage {
+  if (raw && (typeof raw.prompt_tokens === "number" || typeof raw.total_tokens === "number")) {
+    const promptTokens = Math.max(0, Math.round(raw.prompt_tokens ?? 0));
+    const completionTokens = Math.max(0, Math.round(raw.completion_tokens ?? 0));
+    const totalTokens = Math.max(
+      promptTokens + completionTokens,
+      Math.round(raw.total_tokens ?? promptTokens + completionTokens),
+    );
+    return { promptTokens, completionTokens, totalTokens };
+  }
+  const promptTokens = estimateMessagesTokens(messages);
+  const outChars =
+    (completionText?.length ?? 0) + (toolCalls.length > 0 ? JSON.stringify(toolCalls).length : 0);
+  const completionTokens = Math.max(1, Math.ceil(outChars / 4));
+  return { promptTokens, completionTokens, totalTokens: promptTokens + completionTokens };
 }
 
 export interface LlmProviderStatus {
@@ -309,6 +350,11 @@ export class LlmProviderService {
             tool_calls?: LlmToolCall[];
           };
         }>;
+        usage?: {
+          prompt_tokens?: number;
+          completion_tokens?: number;
+          total_tokens?: number;
+        };
       };
 
       const choice = json.choices?.[0];
@@ -322,12 +368,16 @@ export class LlmProviderService {
         };
       }
 
+      const content = choice.message.content ?? null;
+      const toolCalls = Array.isArray(choice.message.tool_calls) ? choice.message.tool_calls : [];
       return {
         ok: true,
         data: {
-          content: choice.message.content ?? null,
-          toolCalls: Array.isArray(choice.message.tool_calls) ? choice.message.tool_calls : [],
+          content,
+          toolCalls,
           finishReason: choice.finish_reason ?? null,
+          usage: normalizeUsage(json.usage, messages, content, toolCalls),
+          modelUsed: model,
         },
       };
     } catch (err) {
@@ -380,6 +430,7 @@ export class LlmProviderService {
         messages,
         temperature: 0.2,
         stream: true,
+        stream_options: { include_usage: true },
       };
       if (tools.length > 0) {
         body.tools = tools;
@@ -449,6 +500,7 @@ export class LlmProviderService {
       let buffer = "";
       let content = "";
       let finishReason: string | null = null;
+      let streamUsage: { prompt_tokens?: number; completion_tokens?: number; total_tokens?: number } | undefined;
       const toolList: LlmToolCall[] = [];
       const toolByIndex = new Map<number, LlmToolCall>();
       const toolById = new Map<string, LlmToolCall>();
@@ -470,6 +522,11 @@ export class LlmProviderService {
 
           try {
             const parsed = JSON.parse(dataStr) as {
+              usage?: {
+                prompt_tokens?: number;
+                completion_tokens?: number;
+                total_tokens?: number;
+              };
               choices?: Array<{
                 finish_reason?: string | null;
                 delta?: {
@@ -485,6 +542,9 @@ export class LlmProviderService {
                 };
               }>;
             };
+            if (parsed.usage) {
+              streamUsage = parsed.usage;
+            }
             const choice = parsed.choices?.[0];
             if (!choice) continue;
             if (choice.finish_reason) finishReason = choice.finish_reason;
@@ -551,6 +611,8 @@ export class LlmProviderService {
         content: content || null,
         toolCalls: toolList,
         finishReason,
+        usage: normalizeUsage(streamUsage, messages, content || null, toolList),
+        modelUsed: model,
       };
     } catch (err) {
       if (err instanceof ServiceUnavailableException) throw err;

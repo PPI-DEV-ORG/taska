@@ -4449,12 +4449,15 @@ model DrivePermission {
 // ─────────────────────────────── AI Assistant (LLM Agent) ───────────────────────────────
 
 model AiChatSession {
-  id        Int               @id @default(autoincrement())
-  userId    Int
-  user      User              @relation(fields: [userId], references: [id], onDelete: Cascade)
-  title     String            @db.VarChar(191)
-  createdAt DateTime          @default(now())
-  updatedAt DateTime          @default(now()) @updatedAt
+  id                     Int               @id @default(autoincrement())
+  userId                 Int
+  user                   User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  title                  String            @db.VarChar(191)
+  summary                String?           @db.LongText
+  compactedUpToMessageId Int?
+  compactedAt            DateTime?
+  createdAt              DateTime          @default(now())
+  updatedAt              DateTime          @default(now()) @updatedAt
 
   messages       AiChatMessage[]
   pendingActions AiPendingAction[]
@@ -4464,15 +4467,20 @@ model AiChatSession {
 }
 
 model AiChatMessage {
-  id            Int           @id @default(autoincrement())
-  sessionId     Int
-  session       AiChatSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
-  role          String        @db.VarChar(24) // user | assistant
-  content       String        @db.LongText
-  toolsUsedJson String?       @db.LongText
-  createdAt     DateTime      @default(now())
+  id               Int           @id @default(autoincrement())
+  sessionId        Int
+  session          AiChatSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  role             String        @db.VarChar(24) // user | assistant
+  content          String        @db.LongText
+  toolsUsedJson    String?       @db.LongText
+  promptTokens     Int?
+  completionTokens Int?
+  totalTokens      Int?
+  modelUsed        String?       @db.VarChar(120)
+  createdAt        DateTime      @default(now())
 
   @@index([sessionId, createdAt])
+  @@index([createdAt])
   @@map("ai_chat_messages")
 }
 

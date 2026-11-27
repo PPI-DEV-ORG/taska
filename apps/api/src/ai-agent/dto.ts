@@ -98,4 +98,17 @@ export class UpdateAiSettingsDto {
   @IsOptional()
   @IsBoolean()
   clearApiKey?: boolean;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(0)
+  monthlyTokenQuota?: number;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(3)
+  @Max(50)
+  maxTurnsPerSession?: number;
 }

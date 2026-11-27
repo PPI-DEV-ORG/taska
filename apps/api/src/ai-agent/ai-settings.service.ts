@@ -17,6 +17,8 @@ interface StoredLlmConfig {
   fallbackModels?: string[];
   timeoutMs?: number;
   encryptedApiKey?: string;
+  monthlyTokenQuota?: number | null;
+  maxTurnsPerSession?: number;
 }
 
 export interface EffectiveLlmConfig {
@@ -25,6 +27,8 @@ export interface EffectiveLlmConfig {
   model: string;
   fallbackModels: string[];
   timeoutMs: number;
+  monthlyTokenQuota: number | null;
+  maxTurnsPerSession: number;
   source: "DB" | "ENV";
   hasApiKey: boolean;
 }
@@ -34,6 +38,8 @@ export interface PublicLlmSettings {
   model: string;
   fallbackModels: string[];
   timeoutMs: number;
+  monthlyTokenQuota: number | null;
+  maxTurnsPerSession: number;
   hasApiKey: boolean;
   source: "DB" | "ENV";
   providerLabel: string;
@@ -46,6 +52,8 @@ export interface UpdateLlmSettingsInput {
   timeoutMs?: number;
   apiKey?: string;
   clearApiKey?: boolean;
+  monthlyTokenQuota?: number | null;
+  maxTurnsPerSession?: number;
 }
 
 @Injectable()
@@ -146,6 +154,14 @@ export class AiSettingsService {
     const dbKey = stored?.encryptedApiKey ? this.decryptSecret(stored.encryptedApiKey) : null;
     const apiKey = (dbKey || env.apiKey).trim();
     const source: "DB" | "ENV" = stored ? "DB" : "ENV";
+    const monthlyTokenQuota =
+      typeof stored?.monthlyTokenQuota === "number" && stored.monthlyTokenQuota > 0
+        ? stored.monthlyTokenQuota
+        : null;
+    const maxTurnsPerSession =
+      typeof stored?.maxTurnsPerSession === "number" && stored.maxTurnsPerSession >= 3
+        ? Math.min(50, Math.round(stored.maxTurnsPerSession))
+        : 10;
 
     return {
       baseUrl,
@@ -153,6 +169,8 @@ export class AiSettingsService {
       model,
       fallbackModels,
       timeoutMs,
+      monthlyTokenQuota,
+      maxTurnsPerSession,
       source,
       hasApiKey: Boolean(apiKey),
     };
@@ -178,6 +196,8 @@ export class AiSettingsService {
       model: eff.model,
       fallbackModels: eff.fallbackModels,
       timeoutMs: eff.timeoutMs,
+      monthlyTokenQuota: eff.monthlyTokenQuota,
+      maxTurnsPerSession: eff.maxTurnsPerSession,
       hasApiKey: eff.hasApiKey,
       source: eff.source,
       providerLabel: this.getProviderLabel(eff.baseUrl),
@@ -200,6 +220,17 @@ export class AiSettingsService {
         : {}),
       ...(input.timeoutMs !== undefined && Number.isFinite(input.timeoutMs)
         ? { timeoutMs: Math.max(5000, Math.min(120000, Math.round(input.timeoutMs))) }
+        : {}),
+      ...(input.monthlyTokenQuota !== undefined
+        ? {
+            monthlyTokenQuota:
+              input.monthlyTokenQuota && Number(input.monthlyTokenQuota) > 0
+                ? Math.round(Number(input.monthlyTokenQuota))
+                : null,
+          }
+        : {}),
+      ...(input.maxTurnsPerSession !== undefined && Number.isFinite(input.maxTurnsPerSession)
+        ? { maxTurnsPerSession: Math.max(3, Math.min(50, Math.round(input.maxTurnsPerSession))) }
         : {}),
     };
 

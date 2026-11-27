@@ -23,6 +23,11 @@ export class AiAgentController {
     return this.service.getCapabilities(user);
   }
 
+  @Get("usage")
+  usage(@CurrentUser() user: RequestUser) {
+    return this.service.getUsage(user);
+  }
+
   @Get("settings")
   getSettings(@CurrentUser() user: RequestUser) {
     return this.service.getSettings(user);
@@ -51,6 +56,11 @@ export class AiAgentController {
   @Delete("sessions/:id")
   deleteSession(@CurrentUser() user: RequestUser, @Param("id", ParseIntPipe) id: number) {
     return this.service.deleteSession(user, id);
+  }
+
+  @Post("sessions/:id/compact")
+  compactSession(@CurrentUser() user: RequestUser, @Param("id", ParseIntPipe) id: number) {
+    return this.service.compactSession(user, id);
   }
 
   @Post("sessions/:id/undo")

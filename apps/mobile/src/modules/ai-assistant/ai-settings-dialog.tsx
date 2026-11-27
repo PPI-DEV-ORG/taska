@@ -34,6 +34,8 @@ export function AiSettingsDialog({
   const [model, setModel] = React.useState("");
   const [fallbacks, setFallbacks] = React.useState("");
   const [timeoutMs, setTimeoutMs] = React.useState("45000");
+  const [monthlyTokenQuota, setMonthlyTokenQuota] = React.useState("");
+  const [maxTurnsPerSession, setMaxTurnsPerSession] = React.useState("10");
   const [apiKey, setApiKey] = React.useState("");
   const [testResult, setTestResult] = React.useState<string | null>(null);
   const [errMsg, setErrMsg] = React.useState<string | null>(null);
@@ -55,6 +57,8 @@ export function AiSettingsDialog({
         setModel(s.model);
         setFallbacks(s.fallbackModels.join(", "));
         setTimeoutMs(String(s.timeoutMs));
+        setMonthlyTokenQuota(s.monthlyTokenQuota ? String(s.monthlyTokenQuota) : "");
+        setMaxTurnsPerSession(String(s.maxTurnsPerSession ?? 10));
       } catch (err) {
         if (!active) return;
         setErrMsg((err as Error)?.message || "Gagal memuat pengaturan LLM.");
@@ -95,6 +99,8 @@ export function AiSettingsDialog({
           .map((x) => x.trim())
           .filter(Boolean),
         timeoutMs: Number(timeoutMs) || 45000,
+        monthlyTokenQuota: monthlyTokenQuota.trim() ? Number(monthlyTokenQuota.trim()) || 0 : 0,
+        maxTurnsPerSession: Number(maxTurnsPerSession) || 10,
         ...(apiKey.trim() ? { apiKey: apiKey.trim() } : {}),
       });
       setMeta(updated);
@@ -195,6 +201,24 @@ export function AiSettingsDialog({
                 onChangeText={setTimeoutMs}
                 keyboardType="numeric"
                 placeholder="45000"
+              />
+            </FormField>
+
+            <FormField label="Batas Giliran Chat sebelum Auto-Compact (default 10)">
+              <Input
+                value={maxTurnsPerSession}
+                onChangeText={setMaxTurnsPerSession}
+                keyboardType="numeric"
+                placeholder="10"
+              />
+            </FormField>
+
+            <FormField label="Target Kuota Token Bulanan (opsional, 0 = tanpa batas)">
+              <Input
+                value={monthlyTokenQuota}
+                onChangeText={setMonthlyTokenQuota}
+                keyboardType="numeric"
+                placeholder="mis. 5000000"
               />
             </FormField>
 

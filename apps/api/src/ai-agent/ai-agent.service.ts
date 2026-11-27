@@ -18,7 +18,9 @@ import { AiActionsService, type AiPendingActionView } from "./ai-actions.service
 import type { SendAiChatDto } from "./dto.js";
 
 const MAX_TOOL_ITERATIONS = 5;
-const HISTORY_WINDOW = 10;
+const DEFAULT_MAX_TURNS = 10;
+const AUTO_COMPACT_TOKEN_THRESHOLD = 16_000;
+const CONTEXT_WINDOW_SOFT_CAP = 24_000;
 const RATE_LIMIT_WINDOW_MS = 60_000;
 const RATE_LIMIT_MAX_REQ = 15;
 
@@ -28,12 +30,25 @@ export interface AiChatAttachmentView {
   mimeType?: string;
 }
 
+export interface AiSessionStatsView {
+  activeTurns: number;
+  maxTurns: number;
+  sessionTokens: number;
+  contextTokensEst: number;
+  contextSoftCap: number;
+  compacted: boolean;
+  compactedAt: string | null;
+  wasAutoCompacted?: boolean;
+}
+
 export interface AiChatMessageView {
   id: number;
   role: "user" | "assistant";
   content: string;
   toolsUsed: string[];
   attachments?: AiChatAttachmentView[];
+  totalTokens?: number | null;
+  modelUsed?: string | null;
   createdAt: string;
 }
 
@@ -49,6 +64,7 @@ export type AiStreamEvent =
         assistantMessage: AiChatMessageView;
         toolsUsed: string[];
         pendingActions: AiPendingActionView[];
+        sessionStats?: AiSessionStatsView;
       };
     }
   | { type: "error"; message: string };
@@ -140,6 +156,226 @@ export class AiAgentService {
     }));
   }
 
+  async getUsage(user: RequestUser) {
+    const todayIso = getWibDateString();
+    const todayStart = new Date(`${todayIso}T00:00:00.000+07:00`);
+    const monthStart = new Date(`${todayIso.slice(0, 7)}-01T00:00:00.000+07:00`);
+
+    const [todayAgg, monthAgg, effConfig] = await Promise.all([
+      this.prisma.main.aiChatMessage.aggregate({
+        where: {
+          role: "assistant",
+          createdAt: { gte: todayStart },
+          session: { userId: user.id },
+        },
+        _count: { id: true },
+        _sum: { promptTokens: true, completionTokens: true, totalTokens: true },
+      }),
+      this.prisma.main.aiChatMessage.aggregate({
+        where: {
+          role: "assistant",
+          createdAt: { gte: monthStart },
+          session: { userId: user.id },
+        },
+        _count: { id: true },
+        _sum: { promptTokens: true, completionTokens: true, totalTokens: true },
+      }),
+      this.settings ? this.settings.getEffectiveConfig().catch(() => null) : Promise.resolve(null),
+    ]);
+
+    const canSeeGlobal = ["SUPER_ADMIN", "ADMIN", "BOS"].includes(user.role);
+    const globalAgg = canSeeGlobal
+      ? await this.prisma.main.aiChatMessage.aggregate({
+          where: { role: "assistant", createdAt: { gte: monthStart } },
+          _count: { id: true },
+          _sum: { promptTokens: true, completionTokens: true, totalTokens: true },
+        })
+      : null;
+
+    const monthlyQuota = effConfig?.monthlyTokenQuota ?? null;
+    const globalTotal = globalAgg?._sum.totalTokens ?? monthAgg._sum.totalTokens ?? 0;
+
+    return {
+      today: {
+        requests: todayAgg._count.id,
+        promptTokens: todayAgg._sum.promptTokens ?? 0,
+        completionTokens: todayAgg._sum.completionTokens ?? 0,
+        totalTokens: todayAgg._sum.totalTokens ?? 0,
+      },
+      month: {
+        requests: monthAgg._count.id,
+        promptTokens: monthAgg._sum.promptTokens ?? 0,
+        completionTokens: monthAgg._sum.completionTokens ?? 0,
+        totalTokens: monthAgg._sum.totalTokens ?? 0,
+      },
+      globalMonth: globalAgg
+        ? {
+            requests: globalAgg._count.id,
+            promptTokens: globalAgg._sum.promptTokens ?? 0,
+            completionTokens: globalAgg._sum.completionTokens ?? 0,
+            totalTokens: globalAgg._sum.totalTokens ?? 0,
+          }
+        : null,
+      monthlyTokenQuota: monthlyQuota,
+      quotaUsagePct:
+        monthlyQuota && monthlyQuota > 0
+          ? Math.min(100, Math.round((globalTotal / monthlyQuota) * 100))
+          : null,
+      maxTurnsPerSession: effConfig?.maxTurnsPerSession ?? DEFAULT_MAX_TURNS,
+    };
+  }
+
+  private async getMaxTurns(): Promise<number> {
+    if (!this.settings) return DEFAULT_MAX_TURNS;
+    try {
+      const cfg = await this.settings.getEffectiveConfig();
+      return cfg.maxTurnsPerSession || DEFAULT_MAX_TURNS;
+    } catch {
+      return DEFAULT_MAX_TURNS;
+    }
+  }
+
+  private buildSessionStats(
+    session: {
+      summary?: string | null;
+      compactedUpToMessageId?: number | null;
+      compactedAt?: Date | null;
+    },
+    allMessages: Array<{
+      id: number;
+      role: string;
+      content: string;
+      totalTokens?: number | null;
+    }>,
+    maxTurns: number,
+    wasAutoCompacted = false,
+  ): AiSessionStatsView {
+    const cutId = session.compactedUpToMessageId ?? 0;
+    const activeMsgs = allMessages.filter((m) => m.id > cutId);
+    const activeTurns = activeMsgs.filter((m) => m.role === "user").length;
+    const sessionTokens = allMessages.reduce((sum, m) => sum + (m.totalTokens ?? 0), 0);
+    const summaryChars = session.summary?.length ?? 0;
+    const activeChars = activeMsgs.reduce((sum, m) => sum + m.content.length + 12, 0);
+    // Tambahkan estimasi ~800 token untuk system prompt & definisi tool
+    const contextTokensEst = Math.ceil((summaryChars + activeChars) / 4) + 800;
+
+    return {
+      activeTurns,
+      maxTurns,
+      sessionTokens,
+      contextTokensEst,
+      contextSoftCap: CONTEXT_WINDOW_SOFT_CAP,
+      compacted: Boolean(session.summary),
+      compactedAt: session.compactedAt ? session.compactedAt.toISOString() : null,
+      ...(wasAutoCompacted ? { wasAutoCompacted: true } : {}),
+    };
+  }
+
+  /**
+   * Meringkas riwayat percakapan lama ke `session.summary` agar context window tetap ramping & hemat token.
+   */
+  async compactSession(
+    user: RequestUser,
+    sessionId: number,
+    opts?: { keepRecentTurns?: number },
+  ) {
+    const session = await this.prisma.main.aiChatSession.findFirst({
+      where: { id: sessionId, userId: user.id },
+      include: {
+        messages: { orderBy: { id: "asc" } },
+      },
+    });
+    if (!session) {
+      throw new NotFoundException("Sesi percakapan tidak ditemukan.");
+    }
+
+    const cutId = session.compactedUpToMessageId ?? 0;
+    const activeMessages = session.messages.filter((m) => m.id > cutId);
+    const keepRecentTurns = opts?.keepRecentTurns ?? 0;
+
+    let toSummarize = activeMessages;
+    if (keepRecentTurns > 0) {
+      const userIndices: number[] = [];
+      activeMessages.forEach((m, idx) => {
+        if (m.role === "user") userIndices.push(idx);
+      });
+      if (userIndices.length <= keepRecentTurns) {
+        const maxTurns = await this.getMaxTurns();
+        return {
+          compacted: false,
+          summary: session.summary ?? null,
+          sessionStats: this.buildSessionStats(session, session.messages, maxTurns),
+        };
+      }
+      const keepFromIdx = userIndices[userIndices.length - keepRecentTurns]!;
+      toSummarize = activeMessages.slice(0, keepFromIdx);
+    }
+
+    if (toSummarize.length === 0) {
+      const maxTurns = await this.getMaxTurns();
+      return {
+        compacted: false,
+        summary: session.summary ?? null,
+        sessionStats: this.buildSessionStats(session, session.messages, maxTurns),
+      };
+    }
+
+    const transcript = toSummarize
+      .map((m) => `${m.role === "user" ? "Pengguna" : "Asisten"}: ${m.content.slice(0, 1200)}`)
+      .join("\n\n");
+
+    const summarizePrompt: LlmChatMessage[] = [
+      {
+        role: "system",
+        content:
+          "Ringkas riwayat percakapan ERP ini secara padat dalam bahasa Indonesia (maksimal 180 kata). Pertahankan fakta penting: angka, nama customer/proyek/dokumen, periode tanggal, keputusan, dan draft yang dibuat. Jangan bertele-tele.",
+      },
+      {
+        role: "user",
+        content: [
+          session.summary ? `Ringkasan sebelumnya:\n${session.summary}\n` : "",
+          `Percakapan yang perlu diringkas:\n${transcript}`,
+        ].join("\n"),
+      },
+    ];
+
+    let summaryText = "";
+    try {
+      const res = await this.llm.complete(summarizePrompt, []);
+      summaryText = (res.content || "").trim();
+    } catch {
+      // Fallback ekstraktif jika LLM sementara padat
+      summaryText = [
+        session.summary || "",
+        ...toSummarize
+          .filter((m) => m.role === "user")
+          .map((m) => `- ${m.content.slice(0, 140)}`),
+      ]
+        .filter(Boolean)
+        .join("\n")
+        .slice(0, 1200);
+    }
+
+    const lastCompactedId = toSummarize[toSummarize.length - 1]!.id;
+    const now = new Date();
+    const updatedSession = await this.prisma.main.aiChatSession.update({
+      where: { id: session.id },
+      data: {
+        summary: summaryText || session.summary,
+        compactedUpToMessageId: lastCompactedId,
+        compactedAt: now,
+      },
+    });
+
+    const maxTurns = await this.getMaxTurns();
+    return {
+      compacted: true,
+      compactedMessagesCount: toSummarize.length,
+      summary: updatedSession.summary ?? null,
+      sessionStats: this.buildSessionStats(updatedSession, session.messages, maxTurns),
+    };
+  }
+
   async getSession(user: RequestUser, sessionId: number) {
     const session = await this.prisma.main.aiChatSession.findFirst({
       where: { id: sessionId, userId: user.id },
@@ -153,9 +389,10 @@ export class AiAgentService {
     if (!session) {
       throw new NotFoundException("Sesi percakapan tidak ditemukan.");
     }
-    const pendingActions = this.actions
-      ? await this.actions.listSessionActions(user, session.id)
-      : [];
+    const [pendingActions, maxTurns] = await Promise.all([
+      this.actions ? this.actions.listSessionActions(user, session.id) : Promise.resolve([]),
+      this.getMaxTurns(),
+    ]);
     return {
       id: session.id,
       title: session.title,
@@ -163,6 +400,7 @@ export class AiAgentService {
       updatedAt: session.updatedAt.toISOString(),
       messages: session.messages.map((m) => this.toMessageView(m)),
       pendingActions,
+      sessionStats: this.buildSessionStats(session, session.messages, maxTurns),
     };
   }
 
@@ -275,6 +513,48 @@ export class AiAgentService {
     return parts.join("");
   }
 
+  private async prepareContextAndAutoCompact(
+    user: RequestUser,
+    session: {
+      id: number;
+      title: string;
+      summary: string | null;
+      compactedUpToMessageId: number | null;
+      compactedAt: Date | null;
+    },
+    onStatus?: (text: string) => void,
+  ) {
+    const maxTurns = await this.getMaxTurns();
+    const allMsgs = await this.prisma.main.aiChatMessage.findMany({
+      where: { sessionId: session.id },
+      orderBy: { id: "asc" },
+      select: { id: true, role: true, content: true, totalTokens: true },
+    });
+
+    let activeSession = session;
+    let wasAutoCompacted = false;
+    const preStats = this.buildSessionStats(activeSession, allMsgs, maxTurns);
+
+    // Auto-compact bila giliran aktif >= batas (default 10) atau estimasi context melewati ambang
+    if (preStats.activeTurns >= maxTurns || preStats.contextTokensEst >= AUTO_COMPACT_TOKEN_THRESHOLD) {
+      onStatus?.("Meringkas konteks percakapan lama (/compact otomatis)...");
+      const compactRes = await this.compactSession(user, session.id, { keepRecentTurns: 2 });
+      if (compactRes.compacted) {
+        wasAutoCompacted = true;
+        const reloaded = await this.prisma.main.aiChatSession.findUnique({
+          where: { id: session.id },
+          select: { id: true, title: true, summary: true, compactedUpToMessageId: true, compactedAt: true },
+        });
+        if (reloaded) activeSession = reloaded;
+      }
+    }
+
+    const cutId = activeSession.compactedUpToMessageId ?? 0;
+    const recentHistory = allMsgs.filter((m) => m.id > cutId);
+
+    return { activeSession, recentHistory, maxTurns, wasAutoCompacted };
+  }
+
   async chat(user: RequestUser, dto: SendAiChatDto) {
     this.enforceRateLimit(user.id);
 
@@ -284,12 +564,8 @@ export class AiAgentService {
     }
 
     const session = await this.resolveOrCreateSession(user, dto, promptText);
-    const recentHistory = await this.prisma.main.aiChatMessage.findMany({
-      where: { sessionId: session.id },
-      orderBy: { createdAt: "desc" },
-      take: HISTORY_WINDOW,
-    });
-    recentHistory.reverse();
+    const { activeSession, recentHistory, maxTurns, wasAutoCompacted } =
+      await this.prepareContextAndAutoCompact(user, session);
 
     const savedUserMsg = await this.prisma.main.aiChatMessage.create({
       data: {
@@ -305,7 +581,7 @@ export class AiAgentService {
 
     const allowedTools = this.tools.getAllowedTools(user, dto.pageContext);
     const messages: LlmChatMessage[] = [
-      { role: "system", content: this.buildSystemPrompt(user, dto.pageContext) },
+      { role: "system", content: this.buildSystemPrompt(user, dto.pageContext, activeSession.summary) },
       ...recentHistory.map((m) => ({
         role: (m.role === "assistant" ? "assistant" : "user") as "user" | "assistant",
         content: m.content,
@@ -316,9 +592,19 @@ export class AiAgentService {
     const usedLabels = new Set<string>();
     const createdActions: AiPendingActionView[] = [];
     let finalReply = "";
+    let totalPromptTokens = 0;
+    let totalCompletionTokens = 0;
+    let totalTokens = 0;
+    let modelUsed: string | null = null;
 
     for (let step = 0; step < MAX_TOOL_ITERATIONS; step++) {
       const completion = await this.llm.complete(messages, allowedTools);
+      if (completion.usage) {
+        totalPromptTokens += completion.usage.promptTokens;
+        totalCompletionTokens += completion.usage.completionTokens;
+        totalTokens += completion.usage.totalTokens;
+      }
+      if (completion.modelUsed) modelUsed = completion.modelUsed;
 
       if (completion.toolCalls.length === 0) {
         finalReply = (completion.content || "").trim();
@@ -366,6 +652,10 @@ export class AiAgentService {
         role: "assistant",
         content: finalReply,
         toolsUsedJson: toolsUsed.length > 0 ? JSON.stringify(toolsUsed) : null,
+        promptTokens: totalPromptTokens || null,
+        completionTokens: totalCompletionTokens || null,
+        totalTokens: totalTokens || null,
+        modelUsed,
       },
     });
 
@@ -373,6 +663,12 @@ export class AiAgentService {
       where: { id: session.id },
       data: { updatedAt: new Date() },
     });
+
+    const latestMsgs = await this.prisma.main.aiChatMessage.findMany({
+      where: { sessionId: session.id },
+      select: { id: true, role: true, content: true, totalTokens: true },
+    });
+    const sessionStats = this.buildSessionStats(activeSession, latestMsgs, maxTurns, wasAutoCompacted);
 
     void this.audit.log({
       actor: user,
@@ -389,6 +685,7 @@ export class AiAgentService {
       assistantMessage: this.toMessageView(savedAssistantMsg),
       toolsUsed,
       pendingActions: createdActions,
+      sessionStats,
     };
   }
 
@@ -405,12 +702,10 @@ export class AiAgentService {
     }
 
     const session = await this.resolveOrCreateSession(user, dto, promptText);
-    const recentHistory = await this.prisma.main.aiChatMessage.findMany({
-      where: { sessionId: session.id },
-      orderBy: { createdAt: "desc" },
-      take: HISTORY_WINDOW,
-    });
-    recentHistory.reverse();
+    const { activeSession, recentHistory, maxTurns, wasAutoCompacted } =
+      await this.prepareContextAndAutoCompact(user, session, (text) =>
+        emit({ type: "status", text }),
+      );
 
     const savedUserMsg = await this.prisma.main.aiChatMessage.create({
       data: {
@@ -426,7 +721,7 @@ export class AiAgentService {
 
     const allowedTools = this.tools.getAllowedTools(user, dto.pageContext);
     const messages: LlmChatMessage[] = [
-      { role: "system", content: this.buildSystemPrompt(user, dto.pageContext) },
+      { role: "system", content: this.buildSystemPrompt(user, dto.pageContext, activeSession.summary) },
       ...recentHistory.map((m) => ({
         role: (m.role === "assistant" ? "assistant" : "user") as "user" | "assistant",
         content: m.content,
@@ -437,6 +732,10 @@ export class AiAgentService {
     const usedLabels = new Set<string>();
     const createdActions: AiPendingActionView[] = [];
     let finalReply = "";
+    let totalPromptTokens = 0;
+    let totalCompletionTokens = 0;
+    let totalTokens = 0;
+    let modelUsed: string | null = null;
 
     emit({ type: "status", text: "Menganalisis pertanyaan..." });
 
@@ -446,6 +745,12 @@ export class AiAgentService {
         stepText += chunk;
         emit({ type: "delta", text: chunk });
       });
+      if (completion.usage) {
+        totalPromptTokens += completion.usage.promptTokens;
+        totalCompletionTokens += completion.usage.completionTokens;
+        totalTokens += completion.usage.totalTokens;
+      }
+      if (completion.modelUsed) modelUsed = completion.modelUsed;
 
       if (completion.toolCalls.length === 0) {
         finalReply = (completion.content || stepText).trim();
@@ -496,6 +801,10 @@ export class AiAgentService {
         role: "assistant",
         content: finalReply,
         toolsUsedJson: toolsUsed.length > 0 ? JSON.stringify(toolsUsed) : null,
+        promptTokens: totalPromptTokens || null,
+        completionTokens: totalCompletionTokens || null,
+        totalTokens: totalTokens || null,
+        modelUsed,
       },
     });
 
@@ -503,6 +812,12 @@ export class AiAgentService {
       where: { id: session.id },
       data: { updatedAt: new Date() },
     });
+
+    const latestMsgs = await this.prisma.main.aiChatMessage.findMany({
+      where: { sessionId: session.id },
+      select: { id: true, role: true, content: true, totalTokens: true },
+    });
+    const sessionStats = this.buildSessionStats(activeSession, latestMsgs, maxTurns, wasAutoCompacted);
 
     void this.audit.log({
       actor: user,
@@ -521,6 +836,7 @@ export class AiAgentService {
         assistantMessage: this.toMessageView(savedAssistantMsg),
         toolsUsed,
         pendingActions: createdActions,
+        sessionStats,
       },
     });
   }
@@ -529,11 +845,17 @@ export class AiAgentService {
     user: RequestUser,
     dto: SendAiChatDto,
     promptText: string,
-  ): Promise<{ id: number; title: string }> {
+  ): Promise<{
+    id: number;
+    title: string;
+    summary: string | null;
+    compactedUpToMessageId: number | null;
+    compactedAt: Date | null;
+  }> {
     if (dto.sessionId) {
       const found = await this.prisma.main.aiChatSession.findFirst({
         where: { id: dto.sessionId, userId: user.id },
-        select: { id: true, title: true },
+        select: { id: true, title: true, summary: true, compactedUpToMessageId: true, compactedAt: true },
       });
       if (!found) {
         throw new NotFoundException("Sesi percakapan tidak ditemukan.");
@@ -544,7 +866,7 @@ export class AiAgentService {
       promptText.length > 70 ? `${promptText.slice(0, 67)}...` : promptText;
     return this.prisma.main.aiChatSession.create({
       data: { userId: user.id, title: autoTitle },
-      select: { id: true, title: true },
+      select: { id: true, title: true, summary: true, compactedUpToMessageId: true, compactedAt: true },
     });
   }
 
@@ -562,18 +884,23 @@ export class AiAgentService {
   private buildSystemPrompt(
     user: RequestUser,
     pageContext?: { pathname?: string; module?: string; entityId?: string },
+    sessionSummary?: string | null,
   ): string {
     const todayWib = getWibDateString();
     const ctxHint =
       pageContext?.module && pageContext?.entityId
         ? `Pengguna sedang membuka halaman detail: modul=${pageContext.module}, id=${pageContext.entityId}. Gunakan tool get_current_document_detail bila pengguna bertanya tentang dokumen/data ini.`
         : "";
+    const summaryHint = sessionSummary
+      ? `\nRINGKASAN PERCAKAPAN SEBELUMNYA (hasil /compact):\n${sessionSummary}\n`
+      : "";
 
     return [
       "Anda adalah Asisten AI Analis Bisnis & Operasional resmi untuk Akuntra ERP.",
       `Pengguna saat ini: ${user.name} (Role: ${user.role}).`,
       `Tanggal hari ini (WIB / UTC+7): ${todayWib}.`,
       ...(ctxHint ? [ctxHint] : []),
+      ...(summaryHint ? [summaryHint] : []),
       "",
       "ATURAN WAJIB:",
       "1. Untuk membaca data aktual ERP, WAJIB panggil tool yang tersedia. Gunakan angka pre-agregasi (`note`, `countByStatus`, `totalRows`, subtotal/total); JANGAN pernah mengarang angka.",
@@ -610,6 +937,8 @@ export class AiAgentService {
     role: string;
     content: string;
     toolsUsedJson: string | null;
+    totalTokens?: number | null;
+    modelUsed?: string | null;
     createdAt: Date;
   }): AiChatMessageView {
     const isAssistant = m.role === "assistant";
@@ -640,6 +969,8 @@ export class AiAgentService {
       content: m.content,
       toolsUsed,
       ...(attachments ? { attachments } : {}),
+      ...(isAssistant && m.totalTokens != null ? { totalTokens: m.totalTokens } : {}),
+      ...(isAssistant && m.modelUsed ? { modelUsed: m.modelUsed } : {}),
       createdAt: m.createdAt.toISOString(),
     };
   }

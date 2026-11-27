@@ -45,11 +45,13 @@ import { MarkdownText } from "./markdown-text";
 import { AiSettingsDialog } from "./ai-settings-dialog";
 import {
   cancelAiAction,
+  compactAiSession,
   confirmAiAction,
   deleteAiSession,
   fetchAiCapabilities,
   fetchAiSession,
   fetchAiSessions,
+  fetchAiUsage,
   sendAiChat,
   streamAiChat,
   undoAiLastTurn,
@@ -60,7 +62,17 @@ import {
   type AiChatSessionSummary,
   type AiPageContext,
   type AiPendingActionItem,
+  type AiSessionStats,
+  type AiUsageSummary,
 } from "@/services/api";
+
+function formatCompactTokens(n?: number | null): string {
+  const val = Number(n ?? 0);
+  if (!Number.isFinite(val) || val <= 0) return "0";
+  if (val >= 1_000_000) return `${(val / 1_000_000).toFixed(1)}M`;
+  if (val >= 1_000) return `${(val / 1_000).toFixed(1)}k`;
+  return String(val);
+}
 
 function getLastSessionStorageKey(userId?: string | number) {
   return `akuntra_ai_last_session_${userId ?? "anon"}`;
@@ -84,6 +96,9 @@ export function AiAssistantScreen({
   const storageKey = getLastSessionStorageKey(user?.id);
 
   const [capabilities, setCapabilities] = React.useState<AiCapabilities | null>(null);
+  const [usage, setUsage] = React.useState<AiUsageSummary | null>(null);
+  const [sessionStats, setSessionStats] = React.useState<AiSessionStats | null>(null);
+  const [compacting, setCompacting] = React.useState(false);
   const [sessions, setSessions] = React.useState<AiChatSessionSummary[]>([]);
   const [activeSessionId, setActiveSessionId] = React.useState<number | null>(null);
   const [messages, setMessages] = React.useState<AiChatMessageItem[]>([]);
@@ -105,13 +120,25 @@ export function AiAssistantScreen({
 
   const scrollRef = React.useRef<React.ComponentRef<typeof ScrollView>>(null);
 
+  const refreshUsage = React.useCallback(async () => {
+    try {
+      const u = await fetchAiUsage();
+      setUsage(u);
+    } catch {}
+  }, []);
+
   const loadInitial = React.useCallback(async () => {
     setLoadingInit(true);
     setErrorMsg(null);
     try {
-      const [cap, list] = await Promise.all([fetchAiCapabilities(), fetchAiSessions()]);
+      const [cap, list, u] = await Promise.all([
+        fetchAiCapabilities(),
+        fetchAiSessions(),
+        fetchAiUsage().catch(() => null),
+      ]);
       setCapabilities(cap);
       setSessions(list);
+      if (u) setUsage(u);
     } catch (err) {
       setErrorMsg((err as Error)?.message || "Gagal memuat konfigurasi Asisten AI.");
     } finally {
@@ -121,11 +148,16 @@ export function AiAssistantScreen({
 
   React.useEffect(() => {
     let active = true;
-    void Promise.all([fetchAiCapabilities(), fetchAiSessions()])
-      .then(async ([cap, list]) => {
+    void Promise.all([
+      fetchAiCapabilities(),
+      fetchAiSessions(),
+      fetchAiUsage().catch(() => null),
+    ])
+      .then(async ([cap, list, u]) => {
         if (!active) return;
         setCapabilities(cap);
         setSessions(list);
+        if (u) setUsage(u);
 
         const saved = getStorageItem(storageKey);
         if (saved === "new" || list.length === 0) return;
@@ -141,6 +173,7 @@ export function AiAssistantScreen({
           setActiveSessionId(detail.id);
           setMessages(detail.messages);
           setPendingActions(detail.pendingActions ?? []);
+          setSessionStats(detail.sessionStats ?? null);
           setStorageItem(storageKey, String(detail.id));
         } catch {
           // Abaikan jika sesi sudah terhapus
@@ -168,6 +201,7 @@ export function AiAssistantScreen({
         setActiveSessionId(detail.id);
         setMessages(detail.messages);
         setPendingActions(detail.pendingActions ?? []);
+        setSessionStats(detail.sessionStats ?? null);
         setStorageItem(storageKey, String(detail.id));
       } catch (err) {
         setErrorMsg((err as Error)?.message || "Gagal membuka riwayat percakapan.");
@@ -182,11 +216,32 @@ export function AiAssistantScreen({
     setActiveSessionId(null);
     setMessages([]);
     setPendingActions([]);
+    setSessionStats(null);
     setAttachments([]);
     setErrorMsg(null);
     setShowMobileHistory(false);
     setStorageItem(storageKey, "new");
   }, [storageKey]);
+
+  const handleCompactSession = React.useCallback(async () => {
+    if (!activeSessionId || compacting || sending) return;
+    setCompacting(true);
+    setErrorMsg(null);
+    try {
+      const res = await compactAiSession(activeSessionId);
+      setSessionStats(res.sessionStats);
+      toast(
+        res.compacted
+          ? "Konteks percakapan berhasil diringkas (/compact). Context window kini lebih hemat token."
+          : "Belum ada pesan baru yang perlu diringkas.",
+      );
+      void refreshUsage();
+    } catch (err) {
+      toast((err as Error)?.message || "Gagal meringkas percakapan", "danger");
+    } finally {
+      setCompacting(false);
+    }
+  }, [activeSessionId, compacting, refreshUsage, sending, toast]);
 
   const handleDeleteSession = React.useCallback(
     async (id: number) => {
@@ -326,6 +381,11 @@ export function AiAssistantScreen({
     async (overrideText?: string) => {
       const text = (overrideText ?? input).trim();
       if (!text || sending) return;
+      if (text.toLowerCase() === "/compact") {
+        if (!overrideText) setInput("");
+        await handleCompactSession();
+        return;
+      }
       if (capabilities && !capabilities.configured) {
         setErrorMsg("Asisten AI belum dikonfigurasi. Mohon isi API Key LLM di Pengaturan.");
         return;
@@ -383,6 +443,13 @@ export function AiAssistantScreen({
         if (reply.pendingActions?.length) {
           setPendingActions((prev) => [...prev, ...reply.pendingActions!]);
         }
+        if (reply.sessionStats) {
+          setSessionStats(reply.sessionStats);
+          if (reply.sessionStats.wasAutoCompacted) {
+            toast("Konteks percakapan lama diringkas otomatis (/compact) agar tetap ringan.");
+          }
+        }
+        void refreshUsage();
 
         setSessions((prev) => {
           const exists = prev.find((s) => s.id === reply.sessionId);
@@ -407,7 +474,7 @@ export function AiAssistantScreen({
         setStreamingReply("");
       }
     },
-    [activeSessionId, attachments, capabilities, input, pageContext, sending, storageKey],
+    [activeSessionId, attachments, capabilities, handleCompactSession, input, pageContext, refreshUsage, sending, storageKey, toast],
   );
 
   const handleCopyOrShare = React.useCallback(
@@ -629,6 +696,68 @@ export function AiAssistantScreen({
           <Text className="text-primary text-xs font-semibold flex-1" numberOfLines={1}>
             Konteks Aktif: {pageContext.module} #{pageContext.entityId}
           </Text>
+        </View>
+      ) : null}
+
+      {/* Monitor Token, Kuota, & Context Window (/compact) */}
+      {usage || sessionStats ? (
+        <View className="bg-panel/60 border-border/80 rounded-xl border px-3 py-2 gap-1.5">
+          <View className="flex-row flex-wrap items-center justify-between gap-2">
+            <View className="flex-row flex-wrap items-center gap-2">
+              <Text className="text-[11px] font-semibold text-foreground">
+                Context: {sessionStats?.activeTurns ?? 0}/{sessionStats?.maxTurns ?? usage?.maxTurnsPerSession ?? 10} chat
+              </Text>
+              {sessionStats?.compacted ? (
+                <View className="bg-primary/15 rounded-full px-2 py-0.5">
+                  <Text className="text-[10px] font-semibold text-primary">Dirangkum</Text>
+                </View>
+              ) : null}
+              <Text className="text-[11px] text-muted-foreground">
+                Token sesi: {formatCompactTokens(sessionStats?.sessionTokens)} · Bulan ini:{" "}
+                {formatCompactTokens(usage?.globalMonth?.totalTokens ?? usage?.month?.totalTokens)}
+                {usage?.quotaUsagePct != null ? ` (${usage.quotaUsagePct}% kuota)` : ""}
+              </Text>
+            </View>
+            <View className="flex-row items-center gap-1.5">
+              {activeSessionId && messages.length >= 2 ? (
+                <Pressable
+                  disabled={compacting || sending}
+                  onPress={() => void handleCompactSession()}
+                  className="bg-card border-border/80 rounded-lg border px-2 py-1 active:opacity-80"
+                >
+                  <Text className="text-[10px] font-semibold text-foreground">
+                    {compacting ? "Meringkas..." : "Ringkas (/compact)"}
+                  </Text>
+                </Pressable>
+              ) : null}
+              {activeSessionId ? (
+                <Pressable
+                  disabled={sending}
+                  onPress={startNewChat}
+                  className="bg-card border-border/80 rounded-lg border px-2 py-1 active:opacity-80"
+                >
+                  <Text className="text-[10px] font-semibold text-primary">Chat Baru</Text>
+                </Pressable>
+              ) : null}
+            </View>
+          </View>
+          {sessionStats ? (
+            <View className="h-1.5 w-full rounded-full bg-border/60 overflow-hidden">
+              <View
+                className={cn(
+                  "h-full rounded-full",
+                  sessionStats.activeTurns >= sessionStats.maxTurns
+                    ? "bg-danger"
+                    : sessionStats.activeTurns >= Math.ceil(sessionStats.maxTurns * 0.8)
+                      ? "bg-warning"
+                      : "bg-primary",
+                )}
+                style={{
+                  width: `${Math.min(100, Math.round((sessionStats.activeTurns / Math.max(1, sessionStats.maxTurns)) * 100))}%`,
+                }}
+              />
+            </View>
+          ) : null}
         </View>
       ) : null}
 
