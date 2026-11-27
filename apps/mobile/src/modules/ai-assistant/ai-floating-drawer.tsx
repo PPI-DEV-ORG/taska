@@ -1,5 +1,6 @@
 import * as React from "react";
 import { Pressable, View } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { usePathname, useRouter } from "expo-router";
 import { Maximize2, Sparkles } from "lucide-react-native";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -39,6 +40,7 @@ export function AiFloatingDrawer() {
   const pathname = usePathname() || "";
   const router = useRouter();
   const { isMobile } = useBreakpoint();
+  const insets = useSafeAreaInsets();
   const [open, setOpen] = React.useState(false);
 
   // Jangan tampilkan FAB jika sudah berada di halaman penuh Asisten AI
@@ -48,6 +50,8 @@ export function AiFloatingDrawer() {
 
   const pageContext = parsePageContext(pathname);
   const hasDocContext = Boolean(pageContext?.module && pageContext?.entityId);
+  // BottomTabs tingginya h-16 (64px) + insets.bottom; beri jarak 16px di atasnya agar tidak menutupi navbar
+  const bottomOffset = isMobile ? 80 + insets.bottom : 24 + insets.bottom;
 
   return (
     <>
@@ -57,7 +61,7 @@ export function AiFloatingDrawer() {
         style={{
           position: "absolute",
           right: isMobile ? 16 : 24,
-          bottom: isMobile ? 76 : 24,
+          bottom: bottomOffset,
           zIndex: 40,
         }}
         className="bg-primary flex-row items-center gap-2 rounded-full px-4 py-3 shadow-lg active:opacity-85"

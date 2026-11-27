@@ -35,6 +35,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { PageHeader, Panel } from "@/components/akuntra/basics";
 import { useBreakpoint } from "@/hooks/use-breakpoint";
+import { useKeyboardHeight } from "@/hooks/use-keyboard-height";
 import { useApp } from "@/store/app-store";
 import { colors } from "@/tokens";
 import { cn } from "@/lib/utils";
@@ -76,7 +77,10 @@ export function AiAssistantScreen({
 } = {}) {
   const router = useRouter();
   const { isMobile } = useBreakpoint();
+  const keyboardHeight = useKeyboardHeight();
   const { toast, user } = useApp();
+  const isCompactNative = compact && Platform.OS !== "web";
+  const isKeyboardOpen = Platform.OS !== "web" && keyboardHeight > 0;
   const storageKey = getLastSessionStorageKey(user?.id);
 
   const [capabilities, setCapabilities] = React.useState<AiCapabilities | null>(null);
@@ -617,36 +621,64 @@ export function AiAssistantScreen({
     </View>
   );
 
-  const chatCard = (
-    <Panel
-      title={compact ? undefined : "Percakapan"}
-      subtitle={compact ? undefined : "Jawaban diambil langsung dari data aktual ERP sesuai RBAC Anda"}
-      icon={compact ? undefined : Bot}
-      right={
-        !compact && (activeSessionId || messages.length > 0) ? (
-          <Button variant="outline" size="sm" onPress={startNewChat}>
-            <MessageSquarePlus size={14} color={colors.text} />
-            <Text className="text-xs">Baru</Text>
-          </Button>
-        ) : null
-      }
-    >
-      <View className="gap-3.5">
-        {pageContext?.module && pageContext?.entityId ? (
-          <View className="bg-primary/10 border-primary/30 flex-row items-center gap-2 rounded-xl border px-3 py-2">
-            <FileText size={14} color={colors.primary} />
-            <Text className="text-primary text-xs font-semibold flex-1" numberOfLines={1}>
-              Konteks Aktif: {pageContext.module} #{pageContext.entityId}
-            </Text>
-          </View>
-        ) : null}
+  const chatBody = (
+    <View className={cn("gap-3.5", isCompactNative && "flex-1 min-h-0 gap-2.5")}>
+      {pageContext?.module && pageContext?.entityId ? (
+        <View className="bg-primary/10 border-primary/30 flex-row items-center gap-2 rounded-xl border px-3 py-2">
+          <FileText size={14} color={colors.primary} />
+          <Text className="text-primary text-xs font-semibold flex-1" numberOfLines={1}>
+            Konteks Aktif: {pageContext.module} #{pageContext.entityId}
+          </Text>
+        </View>
+      ) : null}
 
-        {loadingInit || loadingSession ? (
-          <View className="py-10 items-center justify-center gap-2">
-            <ActivityIndicator color={colors.primary} />
-            <Text className="text-muted-foreground text-xs">Memuat percakapan...</Text>
-          </View>
-        ) : messages.length === 0 ? (
+      {loadingInit || loadingSession ? (
+        <View
+          className={cn(
+            "py-10 items-center justify-center gap-2",
+            isCompactNative && "flex-1",
+          )}
+        >
+          <ActivityIndicator color={colors.primary} />
+          <Text className="text-muted-foreground text-xs">Memuat percakapan...</Text>
+        </View>
+      ) : messages.length === 0 ? (
+        isCompactNative ? (
+          <ScrollView
+            className="flex-1 min-h-0"
+            contentContainerClassName="py-3 gap-3.5"
+            keyboardShouldPersistTaps="handled"
+            nestedScrollEnabled
+          >
+            <View className="items-center gap-1.5">
+              <View className="bg-primary/10 size-11 rounded-2xl items-center justify-center">
+                <Sparkles size={20} color={colors.primary} />
+              </View>
+              <Text className="text-base font-bold text-foreground text-center">
+                Tanya atau Buat Draft Data ERP
+              </Text>
+              <Text className="text-muted-foreground text-xs text-center max-w-md">
+                Cari laporan per periode (mis. 3 bulan terakhir / 28 Okt–28 Nov), tanya dokumen yang
+                sedang dibuka, atau siapkan draft dengan lampiran file.
+              </Text>
+            </View>
+
+            {contextualPrompts.length ? (
+              <View className="flex-row flex-wrap gap-2 justify-center w-full">
+                {contextualPrompts.map((p) => (
+                  <Pressable
+                    key={p}
+                    disabled={sending || !capabilities?.configured}
+                    onPress={() => void handleSend(p)}
+                    className="bg-panel/80 border-border/80 hover:border-primary/50 active:opacity-80 rounded-xl border px-3 py-2 max-w-full shrink"
+                  >
+                    <Text className="text-foreground text-xs leading-snug text-center">{p}</Text>
+                  </Pressable>
+                ))}
+              </View>
+            ) : null}
+          </ScrollView>
+        ) : (
           <View className="py-4 gap-3.5">
             <View className="items-center gap-1.5">
               <View className="bg-primary/10 size-11 rounded-2xl items-center justify-center">
@@ -676,13 +708,23 @@ export function AiAssistantScreen({
               </View>
             ) : null}
           </View>
-        ) : (
-          <ScrollView
-            ref={scrollRef}
-            className={compact ? "max-h-[340px]" : "max-h-[480px]"}
-            contentContainerClassName="gap-3 py-1"
-            nestedScrollEnabled
-          >
+        )
+      ) : (
+        <ScrollView
+          ref={scrollRef}
+          className={
+            isCompactNative
+              ? "flex-1 min-h-0"
+              : compact
+                ? "max-h-[340px]"
+                : isKeyboardOpen
+                  ? "max-h-[260px]"
+                  : "max-h-[480px]"
+          }
+          contentContainerClassName="gap-3 py-1"
+          keyboardShouldPersistTaps="handled"
+          nestedScrollEnabled
+        >
             {messages.map((m) => {
               const isUser = m.role === "user";
               return (
@@ -824,11 +866,13 @@ export function AiAssistantScreen({
           </View>
         ) : null}
 
-        {messages.length > 0 && contextualPrompts.length ? (
+        {messages.length > 0 && contextualPrompts.length && !(isCompactNative && isKeyboardOpen) ? (
           <ScrollView
             horizontal
             showsHorizontalScrollIndicator={true}
-            contentContainerClassName="gap-2 pb-2 pt-0.5"
+            style={{ flexGrow: 0, flexShrink: 0 }}
+            contentContainerClassName="gap-2 pb-2 pt-0.5 items-center"
+            keyboardShouldPersistTaps="handled"
           >
             {contextualPrompts.map((p) => (
               <Pressable
@@ -889,6 +933,11 @@ export function AiAssistantScreen({
               placeholder="Tulis pertanyaan atau minta buat draft..."
               editable={!sending}
               returnKeyType="send"
+              onFocus={() => {
+                if (Platform.OS !== "web") {
+                  setTimeout(() => scrollRef.current?.scrollToEnd({ animated: true }), 120);
+                }
+              }}
               onSubmitEditing={() => void handleSend()}
             />
           </View>
@@ -903,13 +952,34 @@ export function AiAssistantScreen({
             ) : null}
           </Button>
         </View>
-      </View>
+    </View>
+  );
+
+  const chatCard = isCompactNative ? (
+    <View className="bg-card border-border/80 rounded-2xl border shadow-sm overflow-hidden p-3.5 flex-1 min-h-0">
+      {chatBody}
+    </View>
+  ) : (
+    <Panel
+      title={compact ? undefined : "Percakapan"}
+      subtitle={compact ? undefined : "Jawaban diambil langsung dari data aktual ERP sesuai RBAC Anda"}
+      icon={compact ? undefined : Bot}
+      right={
+        !compact && (activeSessionId || messages.length > 0) ? (
+          <Button variant="outline" size="sm" onPress={startNewChat}>
+            <MessageSquarePlus size={14} color={colors.text} />
+            <Text className="text-xs">Baru</Text>
+          </Button>
+        ) : null
+      }
+    >
+      {chatBody}
     </Panel>
   );
 
   if (compact) {
     return (
-      <View className="gap-2.5">
+      <View className={cn("gap-2.5", isCompactNative && "flex-1 min-h-0")}>
         <View className="flex-row items-center justify-between gap-2">
           <Pressable
             onPress={() => setShowMobileHistory((v) => !v)}

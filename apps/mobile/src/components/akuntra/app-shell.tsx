@@ -20,6 +20,7 @@ import { api, apiBase, uploadFile } from "@/services/api";
 import { subscribeNotificationTap } from "@/services/notify";
 import { getNavForUser, ROLE_LABEL, type NavItem } from "@/constants/modules";
 import { useBreakpoint } from "@/hooks/use-breakpoint";
+import { useKeyboardContainerOffset } from "@/hooks/use-keyboard-height";
 import { colors } from "@/tokens";
 import { kelompokHari, waktuRelatif } from "@/lib/format";
 import { cn } from "@/lib/utils";
@@ -799,14 +800,28 @@ function Topbar({
 
 export function AppShell({ children }: { children: React.ReactNode }) {
   const router = useRouter();
+  const pathname = usePathname() || "";
   const { offline, pendingSyncCount, syncOfflineQueue } = useApp();
   const { bp, isMobile } = useBreakpoint();
+  const { keyboardHeight, effectiveOffset, onContainerLayout } = useKeyboardContainerOffset();
+  const mainScrollRef = React.useRef<React.ComponentRef<typeof ScrollView>>(null);
   const [expanded, setExpanded] = React.useState(false);
   const [more, setMore] = React.useState(false);
   const [notif, setNotif] = React.useState(false);
   const [account, setAccount] = React.useState(false);
   const [whatsapp, setWhatsapp] = React.useState(false);
   const compact = bp === "tablet" && !expanded;
+
+  React.useEffect(() => {
+    if (Platform.OS === "web" || keyboardHeight <= 0) return;
+    if (pathname === "/ai-assistant" || pathname.startsWith("/ai-assistant/")) {
+      const timer = setTimeout(() => {
+        mainScrollRef.current?.scrollToEnd({ animated: true });
+      }, 100);
+      return () => clearTimeout(timer);
+    }
+    return undefined;
+  }, [keyboardHeight, pathname]);
 
   React.useEffect(() => {
     let cleanup: (() => void) | null = null;
@@ -820,10 +835,17 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     };
   }, [router]);
 
+  const hideBottomTabsForKeyboard =
+    isMobile && Platform.OS !== "web" && keyboardHeight > 0;
+
   return (
     <View className="bg-background flex-1 flex-row">
       {!isMobile ? <Sidebar compact={compact} onToggle={bp === "tablet" ? () => setExpanded(false) : undefined} /> : null}
-      <View className="flex-1">
+      <View
+        className="flex-1"
+        onLayout={onContainerLayout}
+        style={effectiveOffset > 0 ? { paddingBottom: effectiveOffset } : undefined}
+      >
         <Topbar
           onMenu={bp === "tablet" ? () => setExpanded((v) => !v) : undefined}
           onNotif={() => setNotif(true)}
@@ -852,10 +874,18 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             ) : null}
           </View>
         ) : null}
-        <ScrollView className="flex-1" contentContainerClassName="w-full p-4 pb-12 md:p-6 lg:px-8 lg:py-6">
+        <ScrollView
+          ref={mainScrollRef}
+          className="flex-1"
+          keyboardShouldPersistTaps="handled"
+          contentContainerClassName={cn(
+            "w-full p-4 md:p-6 lg:px-8 lg:py-6",
+            hideBottomTabsForKeyboard ? "pb-4" : "pb-12",
+          )}
+        >
           {children}
         </ScrollView>
-        {isMobile ? <BottomTabs onMore={() => setMore(true)} /> : null}
+        {isMobile && !hideBottomTabsForKeyboard ? <BottomTabs onMore={() => setMore(true)} /> : null}
       </View>
       <MoreDialog open={more} onOpenChange={setMore} onNotif={() => setNotif(true)} />
       <NotifDialog open={notif} onOpenChange={setNotif} />
